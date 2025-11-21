@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Календарь</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-bottom: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            flex-shrink: 0;
+        }
+
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .nav-btn {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            min-width: 45px;
+        }
+
+        .nav-btn:active {
+            opacity: 0.7;
+        }
+
+        .month-year {
+            font-weight: bold;
+            font-size: 18px;
+            min-width: 150px;
+            text-align: center;
+        }
+
+        .clear-all-btn {
+            padding: 8px 15px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .clear-all-btn:active {
+            opacity: 0.7;
+        }
+
+        .tools {
+            display: flex;
+            gap: 10px;
+            padding: 10px 15px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-bottom: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            flex-shrink: 0;
+        }
+
+        .tool-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--tg-theme-button-color, #3390ec);
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-button-color, #3390ec);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tool-btn.active {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+        }
+
+        .tool-btn:active {
+            opacity: 0.7;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: var(--tg-theme-bg-color, #ffffff);
+        }
+
+        .calendar-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-template-rows: auto repeat(6, 1fr);
+            gap: 1px;
+            background: var(--tg-theme-hint-color, #e0e0e0);
+            padding: 1px;
+        }
+
+        .weekday-header {
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            padding: 8px 4px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+
+        .day-cell-bg {
+            background: var(--tg-theme-bg-color, #ffffff);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding-top: 5px;
+            min-height: 60px;
+        }
+
+        .day-number {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--tg-theme-text-color, #000000);
+            z-index: 1;
+        }
+
+        .day-cell-bg.today {
+            background: rgba(51, 144, 236, 0.1);
+        }
+
+        .day-cell-bg.today .day-number {
+            color: var(--tg-theme-button-color, #3390ec);
+            font-weight: bold;
+        }
+
+        .day-cell-bg.has-reminder::after {
+            content: "🔔";
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 14px;
+            z-index: 5;
+        }
+
+        .drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        .drawing-canvas.eraser {
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="none" stroke="red" stroke-width="2"/></svg>') 12 12, auto;
+        }
+
+        .drawing-canvas.reminder-mode {
+            pointer-events: none;
+            cursor: default;
+        }
+
+        .status-bar {
+            padding: 10px 15px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #999999);
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-top: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            flex-shrink: 0;
+        }
+
+        .save-btn {
+            width: 100%;
+            padding: 15px;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 0;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .save-btn:active {
+            opacity: 0.7;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--tg-theme-bg-color, #ffffff);
+            border-radius: 15px;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+            border-radius: 8px;
+            font-size: 16px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+        }
+
+        .priority-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .priority-btn {
+            padding: 12px;
+            border: 2px solid;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--tg-theme-bg-color, #ffffff);
+            transition: all 0.2s;
+        }
+
+        .priority-btn.low {
+            border-color: #4caf50;
+            color: #4caf50;
+        }
+
+        .priority-btn.medium {
+            border-color: #2196f3;
+            color: #2196f3;
+        }
+
+        .priority-btn.high {
+            border-color: #ff9800;
+            color: #ff9800;
+        }
+
+        .priority-btn.urgent {
+            border-color: #f44336;
+            color: #f44336;
+        }
+
+        .priority-btn.active {
+            background: currentColor;
+            color: white;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .modal-btn.primary {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+        }
+
+        .modal-btn.secondary {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #000000);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="month-nav">
+            <button class="nav-btn" id="prevMonth">◀️</button>
+            <div class="month-year" id="monthYear"></div>
+            <button class="nav-btn" id="nextMonth">▶️</button>
+        </div>
+        <button class="clear-all-btn" id="clearAllBtn">🗑️ Очистить всё</button>
+    </div>
+
+    <div class="tools">
+        <button class="tool-btn active" id="pencilBtn">✏️ Карандаш</button>
+        <button class="tool-btn" id="eraserBtn">🧹 Ластик</button>
+        <button class="tool-btn" id="reminderBtn">🔔 Напоминание</button>
+    </div>
+
+    <div class="canvas-container">
+        <div class="calendar-background" id="calendarBackground"></div>
+        <canvas class="drawing-canvas" id="drawingCanvas"></canvas>
+    </div>
+
+    <div class="status-bar" id="status">Режим карандаша: рисуйте на календаре</div>
+    <button class="save-btn" id="saveBtn">💾 Сохранить изменения</button>
+
+    <!-- Модальное окно для напоминания -->
+    <div class="modal" id="reminderModal">
+        <div class="modal-content">
+            <div class="modal-header">🔔 Создать напоминание</div>
+            <div class="form-group">
+                <label class="form-label">Дата:</label>
+                <input type="text" class="form-input" id="reminderDate" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Текст напоминания:</label>
+                <input type="text" class="form-input" id="reminderText" placeholder="Введите текст напоминания">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Время (МСК, ЧЧ:ММ):</label>
+                <input type="text" class="form-input" id="reminderTime" placeholder="14:30" maxlength="5">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Приоритет:</label>
+                <div class="priority-buttons">
+                    <button class="priority-btn low" data-priority="low">🟢 Низкий</button>
+                    <button class="priority-btn medium active" data-priority="medium">🔵 Средний</button>
+                    <button class="priority-btn high" data-priority="high">🟠 Высокий</button>
+                    <button class="priority-btn urgent" data-priority="urgent">🔴 Срочно</button>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" id="cancelReminder">Отмена</button>
+                <button class="modal-btn primary" id="saveReminder">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        let currentDate = new Date();
+        let currentMode = 'pencil';
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let selectedDate = null;
+        let selectedPriority = 'medium';
+        let reminders = {};
+
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const calendarBg = document.getElementById('calendarBackground');
+
+        const monthNames = [
+            'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+            'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+        ];
+
+        const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+        function resizeCanvas() {
+            // Сохраняем текущий рисунок перед изменением размера
+            const currentDrawing = canvas.toDataURL('image/png');
+            
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            
+            // Восстанавливаем рисунок
+            if (currentDrawing && currentDrawing !== 'data:,') {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                };
+                img.src = currentDrawing;
+            } else {
+                // Если нет текущего рисунка, загружаем сохраненный
+                loadDrawing();
+            }
+        }
+
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function isToday(date) {
+            const today = new Date();
+            return date.toDateString() === today.toDateString();
+        }
+
+        function isValidDate(year, month, day) {
+            const date = new Date(year, month - 1, day);
+            const minDate = new Date(2023, 0, 1);
+            const maxDate = new Date(2027, 11, 31);
+            return date >= minDate && date <= maxDate;
+        }
+
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            document.getElementById('monthYear').textContent = `${monthNames[month]} ${year}`;
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            const startDay = (firstDay.getDay() + 6) % 7;
+
+            calendarBg.innerHTML = '';
+
+            weekdays.forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'weekday-header';
+                header.textContent = day;
+                calendarBg.appendChild(header);
+            });
+
+            for (let i = 0; i < startDay; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'day-cell-bg';
+                calendarBg.appendChild(cell);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const cell = document.createElement('div');
+                const date = new Date(year, month, day);
+                const dateStr = formatDate(date);
+                
+                cell.className = 'day-cell-bg';
+                if (isToday(date)) {
+                    cell.classList.add('today');
+                }
+                
+                if (reminders[dateStr] && reminders[dateStr].length > 0) {
+                    cell.classList.add('has-reminder');
+                }
+
+                const dayNum = document.createElement('div');
+                dayNum.className = 'day-number';
+                dayNum.textContent = day;
+                cell.appendChild(dayNum);
+                
+                if (currentMode === 'reminder') {
+                    cell.style.cursor = 'pointer';
+                    cell.addEventListener('click', () => openReminderModal(dateStr, date));
+                }
+
+                calendarBg.appendChild(cell);
+            }
+
+            const totalCells = 7 * 6;
+            const filledCells = startDay + daysInMonth;
+            for (let i = filledCells; i < totalCells; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'day-cell-bg';
+                calendarBg.appendChild(cell);
+            }
+
+            setTimeout(() => {
+                resizeCanvas();
+                loadDrawing();
+            }, 100);
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDrawing(e) {
+            if (currentMode !== 'pencil' && currentMode !== 'eraser') return;
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getEventPos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        function draw(e) {
+            if (!isDrawing || (currentMode !== 'pencil' && currentMode !== 'eraser')) return;
+            e.preventDefault();
+            
+            const pos = getEventPos(e);
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(pos.x, pos.y);
+            
+            if (currentMode === 'pencil') {
+                ctx.strokeStyle = '#3390ec';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.globalCompositeOperation = 'source-over';
+            } else if (currentMode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.lineWidth = 20;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+            }
+            
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+            
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        function stopDrawing(e) {
+            if (isDrawing) {
+                e.preventDefault();
+                isDrawing = false;
+                autoSave();
+            }
+        }
+
+        function setupDrawingEvents() {
+            if (currentMode === 'pencil' || currentMode === 'eraser') {
+                canvas.addEventListener('mousedown', startDrawing);
+                canvas.addEventListener('mousemove', draw);
+                canvas.addEventListener('mouseup', stopDrawing);
+                canvas.addEventListener('mouseleave', stopDrawing);
+                canvas.addEventListener('touchstart', startDrawing, { passive: false });
+                canvas.addEventListener('touchmove', draw, { passive: false });
+                canvas.addEventListener('touchend', stopDrawing, { passive: false });
+                canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+            } else {
+                canvas.removeEventListener('mousedown', startDrawing);
+                canvas.removeEventListener('mousemove', draw);
+                canvas.removeEventListener('mouseup', stopDrawing);
+                canvas.removeEventListener('mouseleave', stopDrawing);
+                canvas.removeEventListener('touchstart', startDrawing);
+                canvas.removeEventListener('touchmove', draw);
+                canvas.removeEventListener('touchend', stopDrawing);
+                canvas.removeEventListener('touchcancel', stopDrawing);
+            }
+        }
+        
+        setupDrawingEvents();
+
+        function setMode(mode) {
+            // Сохраняем текущий рисунок перед переключением режима
+            if (currentMode === 'pencil' || currentMode === 'eraser') {
+                autoSave();
+            }
+            
+            currentMode = mode;
+            document.getElementById('pencilBtn').classList.toggle('active', mode === 'pencil');
+            document.getElementById('eraserBtn').classList.toggle('active', mode === 'eraser');
+            document.getElementById('reminderBtn').classList.toggle('active', mode === 'reminder');
+            canvas.classList.toggle('eraser', mode === 'eraser');
+            canvas.classList.toggle('reminder-mode', mode === 'reminder');
+            
+            setupDrawingEvents();
+            
+            // Перерисовываем календарь только если переключаемся в режим напоминания
+            // Для карандаша и ластика не перерисовываем, чтобы не потерять рисунок
+            if (mode === 'reminder') {
+                renderCalendar();
+            }
+            
+            const status = document.getElementById('status');
+            if (mode === 'pencil') {
+                status.textContent = 'Режим карандаша: рисуйте на календаре';
+            } else if (mode === 'eraser') {
+                status.textContent = 'Режим ластика: стирайте рисунки';
+            } else if (mode === 'reminder') {
+                status.textContent = 'Режим напоминания: выберите дату';
+            }
+        }
+        
+        function autoSave() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth() + 1;
+            const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+            const imageData = canvas.toDataURL('image/png');
+            localStorage.setItem(`drawing_${monthKey}`, imageData);
+        }
+
+        function saveDrawing() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth() + 1;
+            const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+            const imageData = canvas.toDataURL('image/png');
+            
+            const data = {
+                action: 'save_all',
+                month: monthKey,
+                drawing: imageData,
+                reminders: reminders
+            };
+            
+            localStorage.setItem(`drawing_${monthKey}`, imageData);
+            tg.sendData(JSON.stringify(data));
+            tg.showAlert('Все изменения сохранены!');
+        }
+
+        function loadDrawing() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth() + 1;
+            const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+            const savedDrawing = localStorage.getItem(`drawing_${monthKey}`);
+            if (savedDrawing) {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                };
+                img.src = savedDrawing;
+            }
+        }
+
+        function clearCanvas() {
+            if (confirm('Очистить весь рисунок на этом месяце?')) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const year = currentDate.getFullYear();
+                const month = currentDate.getMonth() + 1;
+                const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+                localStorage.removeItem(`drawing_${monthKey}`);
+            }
+        }
+
+        function openReminderModal(dateStr, date) {
+            selectedDate = dateStr;
+            const modal = document.getElementById('reminderModal');
+            const dateInput = document.getElementById('reminderDate');
+            const textInput = document.getElementById('reminderText');
+            const timeInput = document.getElementById('reminderTime');
+            
+            const day = date.getDate();
+            const month = date.getMonth() + 1;
+            const year = date.getFullYear();
+            dateInput.value = `${day}.${month}.${year}`;
+            textInput.value = '';
+            timeInput.value = '';
+            selectedPriority = 'medium';
+            
+            document.querySelectorAll('.priority-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.priority === 'medium') {
+                    btn.classList.add('active');
+                }
+            });
+            
+            modal.classList.add('active');
+            textInput.focus();
+        }
+        
+        function closeReminderModal() {
+            document.getElementById('reminderModal').classList.remove('active');
+        }
+        
+        function saveReminder() {
+            const text = document.getElementById('reminderText').value.trim();
+            const time = document.getElementById('reminderTime').value.trim();
+            
+            if (!text) {
+                tg.showAlert('Введите текст напоминания');
+                return;
+            }
+            
+            if (!time || !/^\d{2}:\d{2}$/.test(time)) {
+                tg.showAlert('Введите время в формате ЧЧ:ММ (например, 14:30)');
+                return;
+            }
+            
+            const [hours, minutes] = time.split(':').map(Number);
+            if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+                tg.showAlert('Неверное время');
+                return;
+            }
+            
+            // Сохраняем локально для отображения
+            if (!reminders[selectedDate]) {
+                reminders[selectedDate] = [];
+            }
+            reminders[selectedDate].push({
+                text: text,
+                time: time,
+                priority: selectedPriority
+            });
+            
+            // Отправляем в бот для сохранения в базу данных
+            const data = {
+                action: 'save_reminder',
+                date: selectedDate,
+                text: text,
+                time: time,
+                priority: selectedPriority
+            };
+            
+            try {
+                tg.sendData(JSON.stringify(data));
+                tg.showAlert('Напоминание создано!');
+            } catch (e) {
+                console.error('Ошибка отправки напоминания:', e);
+                tg.showAlert('Ошибка сохранения напоминания');
+            }
+            
+            closeReminderModal();
+            renderCalendar();
+        }
+
+        document.getElementById('pencilBtn').addEventListener('click', () => setMode('pencil'));
+        document.getElementById('eraserBtn').addEventListener('click', () => setMode('eraser'));
+        document.getElementById('reminderBtn').addEventListener('click', () => setMode('reminder'));
+        document.getElementById('saveBtn').addEventListener('click', saveDrawing);
+        document.getElementById('clearAllBtn').addEventListener('click', clearCanvas);
+        
+        document.getElementById('cancelReminder').addEventListener('click', closeReminderModal);
+        document.getElementById('saveReminder').addEventListener('click', saveReminder);
+        
+        document.querySelectorAll('.priority-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedPriority = btn.dataset.priority;
+            });
+        });
+        
+        document.getElementById('reminderModal').addEventListener('click', (e) => {
+            if (e.target.id === 'reminderModal') {
+                closeReminderModal();
+            }
+        });
+        
+        document.getElementById('reminderTime').addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length >= 2) {
+                value = value.slice(0, 2) + ':' + value.slice(2, 4);
+            }
+            e.target.value = value.slice(0, 5);
+        });
+
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            autoSave();
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            if (!isValidDate(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)) {
+                currentDate.setMonth(currentDate.getMonth() + 1);
+                tg.showAlert('Достигнут предел диапазона дат');
+                return;
+            }
+            renderCalendar();
+        });
+
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            autoSave();
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            if (!isValidDate(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)) {
+                currentDate.setMonth(currentDate.getMonth() - 1);
+                tg.showAlert('Достигнут предел диапазона дат');
+                return;
+            }
+            renderCalendar();
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        renderCalendar();
+        resizeCanvas();
+    </script>
+</body>
+</html>
