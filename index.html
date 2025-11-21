@@ -945,13 +945,29 @@
                 temp_id: tempId
             };
             
+            let savedToBot = false;
             try {
                 tg.sendData(JSON.stringify(data));
+                savedToBot = true;
+                console.log('[Напоминание] Успешно отправлено в бот:', data);
                 tg.showAlert('Напоминание создано!');
             } catch (e) {
-                console.error('Ошибка отправки напоминания:', e);
-                // Даже если отправка не удалась, сохраняем локально
-                tg.showAlert('Напоминание сохранено локально. Будет отправлено при следующем подключении.');
+                console.error('[Напоминание] Ошибка отправки в бот:', e);
+                // Повторная попытка через 1 секунду
+                setTimeout(() => {
+                    try {
+                        tg.sendData(JSON.stringify(data));
+                        savedToBot = true;
+                        console.log('[Напоминание] Повторная отправка успешна');
+                    } catch (e2) {
+                        console.error('[Напоминание] Повторная отправка не удалась:', e2);
+                        tg.showAlert('Напоминание сохранено локально. Будет отправлено при следующем подключении.');
+                    }
+                }, 1000);
+                
+                if (!savedToBot) {
+                    tg.showAlert('Напоминание сохранено локально. Будет отправлено при следующем подключении.');
+                }
             }
             
             closeReminderModal();
@@ -1079,15 +1095,28 @@
             }
             
             if (tempReminders.length > 0) {
+                console.log(`[Синхронизация] Отправка ${tempReminders.length} напоминаний в бот`);
                 const data = {
                     action: 'sync_reminders',
                     reminders: tempReminders
                 };
                 try {
                     tg.sendData(JSON.stringify(data));
+                    console.log('[Синхронизация] Напоминания отправлены в бот');
                 } catch (e) {
-                    console.error('Ошибка синхронизации напоминаний:', e);
+                    console.error('[Синхронизация] Ошибка отправки напоминаний:', e);
+                    // Повторная попытка через 2 секунды
+                    setTimeout(() => {
+                        try {
+                            tg.sendData(JSON.stringify(data));
+                            console.log('[Синхронизация] Повторная отправка успешна');
+                        } catch (e2) {
+                            console.error('[Синхронизация] Повторная отправка не удалась:', e2);
+                        }
+                    }, 2000);
                 }
+            } else {
+                console.log('[Синхронизация] Нет напоминаний для синхронизации');
             }
         }
         
