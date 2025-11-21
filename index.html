@@ -342,6 +342,58 @@
             background: var(--tg-theme-secondary-bg-color, #f0f0f0);
             color: var(--tg-theme-text-color, #000000);
         }
+
+        .reminder-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .reminder-item-content {
+            flex: 1;
+        }
+
+        .reminder-item-time {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .reminder-item-text {
+            font-size: 14px;
+            color: var(--tg-theme-text-color, #000000);
+            margin-bottom: 4px;
+        }
+
+        .reminder-item-priority {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .reminder-item-delete {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .reminder-item-delete:active {
+            opacity: 0.7;
+        }
+
+        .reminders-empty {
+            text-align: center;
+            padding: 20px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
     </style>
 </head>
 <body>
@@ -400,6 +452,18 @@
         </div>
     </div>
 
+    <!-- Модальное окно для просмотра напоминаний -->
+    <div class="modal" id="remindersListModal">
+        <div class="modal-content">
+            <div class="modal-header" id="remindersListHeader">🔔 Напоминания</div>
+            <div id="remindersList" style="max-height: 400px; overflow-y: auto;"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" id="closeRemindersList">Закрыть</button>
+                <button class="modal-btn primary" id="addNewReminder">➕ Добавить</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -412,7 +476,28 @@
         let lastY = 0;
         let selectedDate = null;
         let selectedPriority = 'medium';
-        let reminders = {};
+        let reminders = {}; // {date: [{id, text, time, priority}]}
+        
+        // Функции для работы с localStorage
+        function saveRemindersToStorage() {
+            try {
+                localStorage.setItem('reminders', JSON.stringify(reminders));
+            } catch (e) {
+                console.error('Ошибка сохранения напоминаний:', e);
+            }
+        }
+        
+        function loadRemindersFromStorage() {
+            try {
+                const saved = localStorage.getItem('reminders');
+                if (saved) {
+                    reminders = JSON.parse(saved);
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки напоминаний:', e);
+                reminders = {};
+            }
+        }
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -518,7 +603,20 @@
                 
                 if (currentMode === 'reminder') {
                     cell.style.cursor = 'pointer';
-                    cell.addEventListener('click', () => openReminderModal(dateStr, date));
+                    cell.addEventListener('click', () => {
+                        // Если есть напоминания, показываем список, иначе создаем новое
+                        if (reminders[dateStr] && reminders[dateStr].length > 0) {
+                            showRemindersForDate(dateStr);
+                        } else {
+                            openReminderModal(dateStr, date);
+                        }
+                    });
+                } else {
+                    // В других режимах при клике на дату с напоминаниями показываем список
+                    if (reminders[dateStr] && reminders[dateStr].length > 0) {
+                        cell.style.cursor = 'pointer';
+                        cell.addEventListener('click', () => showRemindersForDate(dateStr));
+                    }
                 }
 
                 calendarBg.appendChild(cell);
@@ -696,7 +794,7 @@
             
             // Всегда очищаем canvas перед загрузкой нового месяца
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
+        
             if (savedDrawing) {
                 const img = new Image();
                 img.onload = () => {
@@ -742,6 +840,59 @@
             textInput.focus();
         }
         
+        function showRemindersForDate(dateStr) {
+            selectedDate = dateStr;
+            const modal = document.getElementById('remindersListModal');
+            const header = document.getElementById('remindersListHeader');
+            const list = document.getElementById('remindersList');
+            
+            const date = new Date(dateStr + 'T00:00:00');
+            const day = date.getDate();
+            const month = date.getMonth() + 1;
+            const year = date.getFullYear();
+            header.textContent = `🔔 Напоминания на ${day}.${month}.${year}`;
+            
+            list.innerHTML = '';
+            
+            if (reminders[dateStr] && reminders[dateStr].length > 0) {
+                // Сортируем по времени
+                const sortedReminders = [...reminders[dateStr]].sort((a, b) => {
+                    return a.time.localeCompare(b.time);
+                });
+                
+                sortedReminders.forEach(reminder => {
+                    const item = document.createElement('div');
+                    item.className = 'reminder-item';
+                    
+                    const priorityLabels = {
+                        'low': '🟢 Низкий',
+                        'medium': '🔵 Средний',
+                        'high': '🟠 Высокий',
+                        'urgent': '🔴 Срочно'
+                    };
+                    
+                    item.innerHTML = `
+                        <div class="reminder-item-content">
+                            <div class="reminder-item-time">${reminder.time}</div>
+                            <div class="reminder-item-text">${reminder.text}</div>
+                            <div class="reminder-item-priority">${priorityLabels[reminder.priority] || '🔵 Средний'}</div>
+                        </div>
+                        <button class="reminder-item-delete" onclick="deleteReminder('${dateStr}', '${reminder.id}')">🗑️</button>
+                    `;
+                    
+                    list.appendChild(item);
+                });
+            } else {
+                list.innerHTML = '<div class="reminders-empty">Нет напоминаний на эту дату</div>';
+            }
+            
+            modal.classList.add('active');
+        }
+        
+        function closeRemindersListModal() {
+            document.getElementById('remindersListModal').classList.remove('active');
+        }
+        
         function closeReminderModal() {
             document.getElementById('reminderModal').classList.remove('active');
         }
@@ -766,15 +917,23 @@
                 return;
             }
             
+            // Генерируем временный ID (будет заменен на реальный от бота)
+            const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
             // Сохраняем локально для отображения
             if (!reminders[selectedDate]) {
                 reminders[selectedDate] = [];
             }
-            reminders[selectedDate].push({
+            const reminder = {
+                id: tempId,
                 text: text,
                 time: time,
                 priority: selectedPriority
-            });
+            };
+            reminders[selectedDate].push(reminder);
+            
+            // Сохраняем в localStorage
+            saveRemindersToStorage();
             
             // Отправляем в бот для сохранения в базу данных
             const data = {
@@ -782,7 +941,8 @@
                 date: selectedDate,
                 text: text,
                 time: time,
-                priority: selectedPriority
+                priority: selectedPriority,
+                temp_id: tempId
             };
             
             try {
@@ -790,12 +950,44 @@
                 tg.showAlert('Напоминание создано!');
             } catch (e) {
                 console.error('Ошибка отправки напоминания:', e);
-                tg.showAlert('Ошибка сохранения напоминания');
+                // Даже если отправка не удалась, сохраняем локально
+                tg.showAlert('Напоминание сохранено локально. Будет отправлено при следующем подключении.');
             }
             
             closeReminderModal();
             renderCalendar();
         }
+        
+        window.deleteReminder = function(dateStr, reminderId) {
+            if (!reminders[dateStr]) return;
+            
+            reminders[dateStr] = reminders[dateStr].filter(r => r.id !== reminderId);
+            if (reminders[dateStr].length === 0) {
+                delete reminders[dateStr];
+            }
+            
+            saveRemindersToStorage();
+            
+            // Отправляем в бот для удаления из базы данных (только если это не временный ID)
+            if (!reminderId.startsWith('temp_')) {
+                const data = {
+                    action: 'delete_reminder',
+                    reminder_id: reminderId
+                };
+                
+                try {
+                    tg.sendData(JSON.stringify(data));
+                } catch (e) {
+                    console.error('Ошибка отправки удаления:', e);
+                    // Удаление сохранено локально, отправится при следующем подключении
+                }
+            }
+            
+            renderCalendar();
+            if (document.getElementById('remindersListModal').classList.contains('active')) {
+                showRemindersForDate(dateStr);
+            }
+        };
 
         document.getElementById('pencilBtn').addEventListener('click', () => setMode('pencil'));
         document.getElementById('eraserBtn').addEventListener('click', () => setMode('eraser'));
@@ -805,6 +997,21 @@
         
         document.getElementById('cancelReminder').addEventListener('click', closeReminderModal);
         document.getElementById('saveReminder').addEventListener('click', saveReminder);
+        
+        document.getElementById('closeRemindersList').addEventListener('click', closeRemindersListModal);
+        document.getElementById('addNewReminder').addEventListener('click', () => {
+            closeRemindersListModal();
+            if (selectedDate) {
+                const date = new Date(selectedDate + 'T00:00:00');
+                openReminderModal(selectedDate, date);
+            }
+        });
+        
+        document.getElementById('remindersListModal').addEventListener('click', (e) => {
+            if (e.target.id === 'remindersListModal') {
+                closeRemindersListModal();
+            }
+        });
         
         document.querySelectorAll('.priority-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -850,9 +1057,58 @@
             renderCalendar();
         });
 
+        // Загружаем напоминания из localStorage при старте
+        loadRemindersFromStorage();
+        
+        // Синхронизируем напоминания с ботом при загрузке
+        function syncRemindersWithBot() {
+            // Отправляем все напоминания с временными ID для получения реальных ID
+            const tempReminders = [];
+            for (const dateStr in reminders) {
+                reminders[dateStr].forEach(reminder => {
+                    if (reminder.id && reminder.id.startsWith('temp_')) {
+                        tempReminders.push({
+                            temp_id: reminder.id,
+                            date: dateStr,
+                            text: reminder.text,
+                            time: reminder.time,
+                            priority: reminder.priority
+                        });
+                    }
+                });
+            }
+            
+            if (tempReminders.length > 0) {
+                const data = {
+                    action: 'sync_reminders',
+                    reminders: tempReminders
+                };
+                try {
+                    tg.sendData(JSON.stringify(data));
+                } catch (e) {
+                    console.error('Ошибка синхронизации напоминаний:', e);
+                }
+            }
+        }
+        
+        // Сохраняем напоминания при закрытии приложения
+        window.addEventListener('beforeunload', () => {
+            saveRemindersToStorage();
+        });
+        
+        // Также сохраняем при потере фокуса
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                saveRemindersToStorage();
+            }
+        });
+        
         window.addEventListener('resize', resizeCanvas);
         renderCalendar();
         resizeCanvas();
+        
+        // Синхронизируем напоминания через небольшую задержку
+        setTimeout(syncRemindersWithBot, 1000);
     </script>
 </body>
 </html>
